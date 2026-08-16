@@ -32,7 +32,9 @@ from datetime import datetime, timezone
 # ----------------------------------------------------------------------------
 # Config
 # ----------------------------------------------------------------------------
-CRED_PATH = os.path.expanduser("~/.claude/.credentials.json")
+# ANTHRO_CRED lets you point at an alternate credentials file (handy for
+# testing the auth-failure path without touching the real one).
+CRED_PATH = os.environ.get("ANTHRO_CRED", os.path.expanduser("~/.claude/.credentials.json"))
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 CACHE_DIR = os.path.join(
     os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache")),
@@ -53,7 +55,9 @@ TEAL      = (0.25, 0.72, 0.63, 1.0)       # normal  (<75%)
 AMBER     = (0.88, 0.65, 0.23, 1.0)       # warn    (75-90%)
 RED       = (0.88, 0.28, 0.23, 1.0)       # high    (>=90%)
 TXT       = (1.0, 1.0, 1.0, 1.0)          # % text
-STALE     = (0.55, 0.58, 0.66, 1.0)       # dimmed when data is stale
+STALE     = (0.55, 0.58, 0.66, 1.0)       # dimmed when data is stale (transient)
+ALERT_BG  = (0.86, 0.20, 0.18, 1.0)       # loud red banner (token dead)
+ALERT_TX  = (1.0, 1.0, 1.0, 1.0)          # banner text
 
 
 # ----------------------------------------------------------------------------
@@ -262,6 +266,62 @@ def render(bars, stale=False, note=None):
     return PNG_PATH
 
 
+def render_alert(message):
+    """Unmissable red banner shown when the token is dead / missing."""
+    import cairo
+    import gi
+    gi.require_version("Pango", "1.0")
+    gi.require_version("PangoCairo", "1.0")
+    from gi.repository import Pango, PangoCairo
+
+    os.makedirs(CACHE_DIR, exist_ok=True)
+    size = max(8, int(H * 0.46))
+
+    # measure the text first so the banner is exactly wide enough
+    meas = cairo.ImageSurface(cairo.FORMAT_ARGB32, 8, 8)
+    mcr = cairo.Context(meas)
+    layout = PangoCairo.create_layout(mcr)
+    desc = Pango.FontDescription()
+    desc.set_family("Sans")
+    desc.set_weight(Pango.Weight.BOLD)
+    desc.set_absolute_size(size * Pango.SCALE)
+    layout.set_font_description(desc)
+    layout.set_text(message, -1)
+    tw, th = layout.get_pixel_size()
+
+    pad = 12
+    w = max(int(tw + pad * 2), 120)
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, H)
+    cr = cairo.Context(surface)
+    cr.set_source_rgba(0, 0, 0, 0)
+    cr.set_operator(cairo.OPERATOR_SOURCE)
+    cr.paint()
+    cr.set_operator(cairo.OPERATOR_OVER)
+
+    # red pill
+    r = H / 2.0
+    cr.new_sub_path()
+    cr.arc(w - r, r, r, -math.pi / 2, math.pi / 2)
+    cr.arc(r, r, r, math.pi / 2, 1.5 * math.pi)
+    cr.close_path()
+    cr.set_source_rgba(*ALERT_BG)
+    cr.fill()
+
+    # centered white text
+    lay = PangoCairo.create_layout(cr)
+    lay.set_font_description(desc)
+    lay.set_text(message, -1)
+    tw2, th2 = lay.get_pixel_size()
+    cr.move_to((w - tw2) / 2.0, (H - th2) / 2.0)
+    cr.set_source_rgba(*ALERT_TX)
+    PangoCairo.show_layout(cr, lay)
+
+    tmp = PNG_PATH + ".tmp"
+    surface.write_to_png(tmp)
+    os.replace(tmp, PNG_PATH)
+    return PNG_PATH
+
+
 # ----------------------------------------------------------------------------
 # genmon output
 # ----------------------------------------------------------------------------
@@ -269,20 +329,27 @@ def emit_genmon(bars, stale, err, fetched_at):
     when = ""
     if fetched_at:
         when = datetime.fromtimestamp(fetched_at).strftime("%H:%M:%S")
-    lines = ["<b>Anthropic usage</b>"]
+
+    if err == "auth":
+        lines = ["<b>⚠ Claude token expired</b>", "Run <tt>claude</tt> to refresh it."]
+    elif err == "no-token":
+        lines = ["<b>⚠ No Claude login found</b>", "Log into Claude Code."]
+    else:
+        lines = ["<b>Anthropic usage</b>"]
+
     for b in bars:
         rline = "%s: %d%%" % (b["label"], round(b["pct"]))
         if b["reset"]:
             rline += "  (resets in %s)" % b["reset"]
         lines.append(rline)
+
     if stale:
         lines.append("")
-        reason = {
-            "offline": "network unreachable",
-            "auth": "token expired — run `claude` to refresh",
-            "no-token": "no Claude credentials found",
-        }.get(err, err or "stale")
-        lines.append("⚠ showing cached data (%s)" % reason)
+        if err not in ("auth", "no-token"):
+            reason = {"offline": "network unreachable"}.get(err, err or "stale")
+            lines.append("⚠ showing cached data (%s)" % reason)
+        else:
+            lines.append("values above are last-known (may be stale)")
         if when:
             lines.append("last good fetch: %s" % when)
     elif when:
@@ -292,7 +359,6 @@ def emit_genmon(bars, stale, err, fetched_at):
 
     print("<img>%s</img>" % PNG_PATH)
     print("<tool>%s</tool>" % tool)
-    # left-click opens the usage page in the browser
     print("<txt></txt>")
 
 
@@ -313,6 +379,19 @@ def main():
         {"label": LABELS[0].strip() if LABELS else "5h", "pct": 0, "reset": "", "reset_iso": None},
         {"label": (LABELS[1].strip() if len(LABELS) > 1 else "Weekly"), "pct": 0, "reset": "", "reset_iso": None},
     ]
+
+    # Token dead/missing -> loud red banner, regardless of whether we have cache.
+    # This is the case you must not miss, so it gets its own unmistakable look.
+    if err in ("auth", "no-token"):
+        msg = "⚠ Claude token expired — run: claude" if err == "auth" \
+              else "⚠ no Claude login — run: claude"
+        render_alert(msg)
+        if arg == "--png":
+            print(PNG_PATH)
+            return
+        emit_genmon(bars, True, err, fetched_at)
+        return
+
     note = None
     if stale and data is None:
         note = "n/a"

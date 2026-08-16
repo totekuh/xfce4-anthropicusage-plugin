@@ -69,9 +69,17 @@ Target a different panel with `PANEL=panel-2 make load`.
 3. renders the two bars to `~/.cache/anthropic-usage/widget.png` (cairo + Pango)
 4. prints genmon XML: `<img>`, a detailed `<tool>` tooltip
 
-If the fetch fails (offline, or the token expired) it falls back to the cached
-JSON and marks the bars stale. An expired token refreshes itself the next time
-you run `claude`, so it self-heals.
+### Failure states (so you notice when it dies)
+
+- **Transient (offline / network blip):** bars dim to grey and keep showing the
+  last cached values. This self-heals on the next successful fetch.
+- **Token expired / no login (HTTP 401/403):** the widget turns into a loud
+  **red banner** — `⚠ Claude token expired — run: claude` — and the tooltip
+  tells you what to do. Running `claude` refreshes the token on disk, and the
+  widget goes back to normal on its next 60 s tick.
+
+This split is deliberate: a network hiccup shouldn't cry wolf, but a dead token
+is actionable and gets shown in red so you can't miss it.
 
 ## Tuning appearance
 
@@ -83,6 +91,7 @@ Environment variables (set them in the genmon **Command**, e.g.
 | `ANTHRO_W`      | `330`      | total image width in px          |
 | `ANTHRO_H`      | `26`       | image height in px               |
 | `ANTHRO_LABELS` | `5h,Weekly`| the two bar labels               |
+| `ANTHRO_CRED`   | `~/.claude/.credentials.json` | credentials file (override for testing) |
 
 Colours and thresholds live near the top of `anthropic_usage.py`.
 
@@ -92,9 +101,14 @@ Colours and thresholds live near the top of `anthropic_usage.py`.
 python3 anthropic_usage.py --json    # raw usage payload
 python3 anthropic_usage.py --png     # render only, print PNG path
 python3 anthropic_usage.py           # genmon XML (what the panel runs)
+
+# force the dead-token red banner without touching your real credentials
+# (isolated cache so the live widget PNG is not overwritten):
+printf '{"claudeAiOauth":{"accessToken":"bogus"}}' > /tmp/bad.json
+ANTHRO_CRED=/tmp/bad.json XDG_CACHE_HOME=/tmp/altcache python3 anthropic_usage.py --png
 ```
 
 ## Uninstall
 
-Right-click the widget → **Remove**. Nothing else is installed system-wide
-(cache lives in `~/.cache/anthropic-usage/`).
+`make unload`, or right-click the widget → **Remove**. Nothing else is installed
+system-wide (cache lives in `~/.cache/anthropic-usage/`).
