@@ -14,7 +14,7 @@ BIN := anthropic-usage
 export PERIOD
 export PANEL
 
-.PHONY: help load install unload uninstall reload restart status render-check test logs deps
+.PHONY: help load install unload uninstall reload restart status render-check test coverage logs deps
 
 help:
 	@echo "Anthropic usage widget"
@@ -27,6 +27,7 @@ help:
 	@echo "  make status        installed? + which binary?"
 	@echo "  make render-check  render the widget PNG once"
 	@echo "  make test          run the pytest suite"
+	@echo "  make coverage      run the suite with a coverage report"
 	@echo "  make logs          tail the fetch log (429s, errors, successes)"
 	@echo "  make deps          check dependencies"
 	@echo
@@ -79,3 +80,6 @@ $(VENV)/bin/python:
 
 test: $(VENV)/bin/python
 	@"$(VENV)/bin/python" -m pytest -q
+
+coverage: $(VENV)/bin/python
+	@"$(VENV)/bin/python" -m pytest -q --cov=anthropic_usage --cov-report=term-missing

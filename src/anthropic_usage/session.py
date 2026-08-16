@@ -27,18 +27,25 @@ def _session_pid() -> Optional[int]:
     return None
 
 
-def _environ_of(pid: int) -> dict:
-    try:
-        with open("/proc/%d/environ" % pid, "rb") as f:
-            raw = f.read()
-    except OSError:
-        return {}
+def _parse_environ(raw: bytes) -> dict:
+    """Parse the NUL-separated KEY=VALUE blob /proc/<pid>/environ hands back.
+
+    partition, not split: DBUS_SESSION_BUS_ADDRESS values contain '=' too.
+    """
     env = {}
     for entry in raw.split(b"\0"):
         if b"=" in entry:
             k, _, v = entry.partition(b"=")
             env[k.decode("utf-8", "replace")] = v.decode("utf-8", "replace")
     return env
+
+
+def _environ_of(pid: int) -> dict:
+    try:
+        with open("/proc/%d/environ" % pid, "rb") as f:
+            return _parse_environ(f.read())
+    except OSError:
+        return {}
 
 
 def ensure_session_env() -> None:
