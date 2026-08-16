@@ -37,7 +37,7 @@ make load        # or: ./install.sh
 ```
 
 This adds a genmon instance to the panel, points it at `anthropic_usage.py`,
-sets a 60s refresh, and reloads the panel. The widget appears at the end of the
+sets a 3-minute refresh, and reloads the panel. The widget appears at the end of the
 panel — right-click → **Move** to reposition, e.g. next to the system tray.
 
 ### Managing it
@@ -50,18 +50,20 @@ panel — right-click → **Move** to reposition, e.g. next to the system tray.
 | `make restart` | quit + relaunch `xfce4-panel`                 |
 | `make status`  | is it installed? + current live values        |
 | `make test`    | render the PNG once                           |
+| `make logs`    | tail the fetch log (successes, 429s, errors)  |
 
 The panel logic lives in `xfce-widget.sh`; the Makefile is a thin wrapper.
 Every panel edit snapshots the current plugin list first and rolls back on any
 failure, so a bug can't nuke your tray, and it never pops a D-Bus dialog.
 
-Refresh interval (default 60 000 ms): `make unload && PERIOD=30000 make load`,
+Refresh interval (default 180 000 ms = 3 min; the usage endpoint is
+burst-rate-limited, so don't go much lower): `make unload && PERIOD=120000 make load`,
 or right-click the widget → **Properties** → *Period (s)*.
 Target a different panel with `PANEL=panel-2 make load`.
 
 ## How it works
 
-`genmon` runs `anthropic_usage.py` every 60s. The script:
+`genmon` runs `anthropic_usage.py` every 3 minutes. The script:
 
 1. reads the OAuth access token from `~/.claude/.credentials.json`
 2. GETs `/api/oauth/usage`, caches the result to
@@ -73,10 +75,14 @@ Target a different panel with `PANEL=panel-2 make load`.
 
 - **Transient (offline / network blip):** bars dim to grey and keep showing the
   last cached values. This self-heals on the next successful fetch.
+- **Rate limited (HTTP 429):** the endpoint has a tight burst limit. On a 429
+  the widget goes grey/stale and **backs off** (honouring `Retry-After`, floor
+  60 s) so it stops hammering; it resumes on the next allowed tick. Every fetch
+  outcome is recorded — check `make logs`.
 - **Token expired / no login (HTTP 401/403):** the widget turns into a loud
   **red banner** — `⚠ Claude token expired — run: claude` — and the tooltip
   tells you what to do. Running `claude` refreshes the token on disk, and the
-  widget goes back to normal on its next 60 s tick.
+  widget goes back to normal on its next tick.
 
 This split is deliberate: a network hiccup shouldn't cry wolf, but a dead token
 is actionable and gets shown in red so you can't miss it.

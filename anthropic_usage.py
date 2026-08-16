@@ -42,6 +42,9 @@ CACHE_DIR = os.path.join(
 )
 CACHE_JSON = os.path.join(CACHE_DIR, "last.json")
 PNG_PATH = os.path.join(CACHE_DIR, "widget.png")
+LOG_PATH = os.path.join(CACHE_DIR, "widget.log")
+BACKOFF_PATH = os.path.join(CACHE_DIR, ".backoff")
+LOG_CAP = 256 * 1024  # bytes; halve the log when it grows past this
 
 W = int(os.environ.get("ANTHRO_W", "330"))
 H = int(os.environ.get("ANTHRO_H", "26"))
@@ -63,6 +66,48 @@ ALERT_TX  = (1.0, 1.0, 1.0, 1.0)          # banner text
 # ----------------------------------------------------------------------------
 # Data
 # ----------------------------------------------------------------------------
+def log_event(msg):
+    """Append one timestamped line to the widget log (best-effort, size-capped)."""
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        try:
+            if os.path.getsize(LOG_PATH) > LOG_CAP:
+                with open(LOG_PATH) as f:
+                    lines = f.readlines()
+                with open(LOG_PATH, "w") as f:
+                    f.writelines(lines[len(lines) // 2:])
+        except FileNotFoundError:
+            pass
+        with open(LOG_PATH, "a") as f:
+            f.write("%s  %s\n" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), msg))
+    except Exception:
+        pass
+
+
+def _read_backoff():
+    try:
+        with open(BACKOFF_PATH) as f:
+            return float(f.read().strip())
+    except Exception:
+        return 0.0
+
+
+def _set_backoff(secs):
+    try:
+        os.makedirs(CACHE_DIR, exist_ok=True)
+        with open(BACKOFF_PATH, "w") as f:
+            f.write(str(time.time() + secs))
+    except Exception:
+        pass
+
+
+def _clear_backoff():
+    try:
+        os.remove(BACKOFF_PATH)
+    except OSError:
+        pass
+
+
 def read_token():
     with open(CRED_PATH) as f:
         return json.load(f)["claudeAiOauth"]["accessToken"]
@@ -70,9 +115,15 @@ def read_token():
 
 def fetch_usage():
     """Return (data_dict, error_str). error_str is None on success."""
+    # honour a rate-limit back-off window without touching the network
+    until = _read_backoff()
+    if until > time.time():
+        return None, "backoff"
+
     try:
         token = read_token()
-    except Exception as e:
+    except Exception:
+        log_event("no credentials at %s" % CRED_PATH)
         return None, "no-token"
 
     req = urllib.request.Request(
@@ -93,10 +144,31 @@ def fetch_usage():
         with open(tmp, "w") as f:
             json.dump(payload, f)
         os.replace(tmp, CACHE_JSON)
+        _clear_backoff()
+        u5 = (data.get("five_hour") or {}).get("utilization")
+        u7 = (data.get("seven_day") or {}).get("utilization")
+        log_event("200 ok  5h=%s%%  7d=%s%%" % (u5, u7))
         return data, None
     except urllib.error.HTTPError as e:
-        return None, "auth" if e.code in (401, 403) else "http-%d" % e.code
-    except Exception:
+        retry_after = None
+        try:
+            retry_after = e.headers.get("Retry-After")
+        except Exception:
+            pass
+        if e.code == 429:
+            secs = int(retry_after) if (retry_after and retry_after.isdigit()) else 120
+            secs = max(secs, 60)  # floor: never hammer, even if Retry-After says 0
+            _set_backoff(secs)
+            log_event("HTTP 429 rate-limited; backing off %ds%s"
+                      % (secs, " (Retry-After)" if retry_after else ""))
+            return None, "http-429"
+        if e.code in (401, 403):
+            log_event("HTTP %d auth failure (token expired/invalid)" % e.code)
+            return None, "auth"
+        log_event("HTTP %d" % e.code)
+        return None, "http-%d" % e.code
+    except Exception as e:
+        log_event("fetch error: %s" % e)
         return None, "offline"
 
 
@@ -346,7 +418,11 @@ def emit_genmon(bars, stale, err, fetched_at):
     if stale:
         lines.append("")
         if err not in ("auth", "no-token"):
-            reason = {"offline": "network unreachable"}.get(err, err or "stale")
+            reason = {
+                "offline": "network unreachable",
+                "http-429": "rate limited — backing off",
+                "backoff": "rate limited — waiting to retry",
+            }.get(err, err or "stale")
             lines.append("⚠ showing cached data (%s)" % reason)
         else:
             lines.append("values above are last-known (may be stale)")

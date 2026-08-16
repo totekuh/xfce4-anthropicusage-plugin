@@ -9,14 +9,14 @@
 #   make test      render the widget PNG once
 #   make deps      check dependencies
 #
-# Overrides:  PERIOD=<ms>  refresh interval (default 60000)
+# Overrides:  PERIOD=<ms>  refresh interval (default 180000)
 #             PANEL=<name> target panel (default panel-1)
 
 SH := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/xfce-widget.sh)
 export PERIOD
 export PANEL
 
-.PHONY: help load install unload uninstall reload restart status test deps
+.PHONY: help load install unload uninstall reload restart status test logs deps
 
 help:
 	@echo "Anthropic usage widget — panel plugin management"
@@ -27,6 +27,7 @@ help:
 	@echo "  make restart   quit + relaunch xfce4-panel"
 	@echo "  make status    installed? + live values"
 	@echo "  make test      render the widget PNG once"
+	@echo "  make logs      tail the fetch log (429s, errors, successes)"
 	@echo "  make deps      check dependencies"
 	@echo
 	@echo "  overrides: PERIOD=<ms> PANEL=<name>"
@@ -53,3 +54,4 @@ reload: ; @bash "$(SH)" reload
 restart: ; @bash "$(SH)" restart
 status: ; @bash "$(SH)" status
 test: ; @bash "$(SH)" test
+logs: ; @bash "$(SH)" logs

@@ -18,7 +18,7 @@ ARR="/panels/${PANEL:-panel-1}/plugin-ids"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="$DIR/anthropic_usage.py"
 CMD="python3 $SCRIPT"
-PERIOD="${PERIOD:-60000}"
+PERIOD="${PERIOD:-180000}"   # 3 min — the usage endpoint is burst-rate-limited
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/anthropic-usage"
 BAK="$CACHE/plugin-ids.bak"
 
@@ -192,6 +192,7 @@ case "${1:-}" in
   restart)         cmd_restart ;;
   status)          cmd_status ;;
   render|test)     chmod +x "$SCRIPT"; "$SCRIPT" --png ;;
+  logs)            if [ -s "$CACHE/widget.log" ]; then tail -n "${2:-40}" "$CACHE/widget.log"; else echo "no log yet at $CACHE/widget.log"; fi ;;
   restore-array)   restore_array ;;
-  *) echo "usage: $0 {load|unload|reload|restart|status|test|restore-array}"; exit 2 ;;
+  *) echo "usage: $0 {load|unload|reload|restart|status|test|logs|restore-array}"; exit 2 ;;
 esac
