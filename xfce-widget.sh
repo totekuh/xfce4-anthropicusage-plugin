@@ -18,7 +18,7 @@ ARR="/panels/${PANEL:-panel-1}/plugin-ids"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPT="$DIR/anthropic_usage.py"
 CMD="python3 $SCRIPT"
-PERIOD="${PERIOD:-180000}"   # 3 min — the usage endpoint is burst-rate-limited
+PERIOD="${PERIOD:-300000}"   # 5 min — usage endpoint is tightly rate-limited
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/anthropic-usage"
 BAK="$CACHE/plugin-ids.bak"
 

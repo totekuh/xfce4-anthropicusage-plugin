@@ -157,7 +157,7 @@ def fetch_usage():
             pass
         if e.code == 429:
             secs = int(retry_after) if (retry_after and retry_after.isdigit()) else 120
-            secs = max(secs, 60)  # floor: never hammer, even if Retry-After says 0
+            secs = max(secs, 300)  # floor: skip ticks after a 429 (>= poll period)
             _set_backoff(secs)
             log_event("HTTP 429 rate-limited; backing off %ds%s"
                       % (secs, " (Retry-After)" if retry_after else ""))

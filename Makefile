@@ -9,7 +9,7 @@
 #   make test      render the widget PNG once
 #   make deps      check dependencies
 #
-# Overrides:  PERIOD=<ms>  refresh interval (default 180000)
+# Overrides:  PERIOD=<ms>  refresh interval (default 300000)
 #             PANEL=<name> target panel (default panel-1)
 
 SH := $(abspath $(dir $(lastword $(MAKEFILE_LIST)))/xfce-widget.sh)
