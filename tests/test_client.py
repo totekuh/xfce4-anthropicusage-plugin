@@ -59,6 +59,34 @@ def test_fetch_usage_no_credentials_file(cfg, monkeypatch):
     assert err == "no-token"
 
 
+def _write_creds(cfg, expires_at_ms):
+    import pathlib
+    pathlib.Path(cfg.cred_path).write_text(json.dumps(
+        {"claudeAiOauth": {"accessToken": "test-token", "expiresAt": expires_at_ms}}))
+
+
+def test_fetch_usage_expired_token_skips_network(cfg, monkeypatch):
+    _write_creds(cfg, (time.time() - 60) * 1000)
+
+    def fail_if_called(req, timeout):
+        raise AssertionError("network should not be hit with an expired token")
+
+    monkeypatch.setattr(client.urllib.request, "urlopen", fail_if_called)
+    data, err = client.fetch_usage(cfg)
+    assert data is None
+    assert err == "auth"
+
+
+def test_fetch_usage_unexpired_token_still_fetches(cfg, monkeypatch):
+    _write_creds(cfg, (time.time() + 3600) * 1000)
+    payload = {"five_hour": {"utilization": 4.0}}
+    monkeypatch.setattr(client.urllib.request, "urlopen",
+                         lambda req, timeout: FakeResponse(json.dumps(payload).encode()))
+    data, err = client.fetch_usage(cfg)
+    assert err is None
+    assert data == payload
+
+
 def test_fetch_usage_401_is_auth_error(cfg, monkeypatch):
     monkeypatch.setattr(client.urllib.request, "urlopen",
                          lambda req, timeout: (_ for _ in ()).throw(http_error(cfg.usage_url, 401)))

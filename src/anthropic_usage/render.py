@@ -11,8 +11,7 @@ from .format import RED, pct_color
 BG = (0.0, 0.0, 0.0, 0.0)          # transparent (panel shows through)
 TRACK = (0.18, 0.20, 0.26, 1.0)    # empty bar
 TRACK_BRD = (0.30, 0.33, 0.40, 1.0)
-TXT = (1.0, 1.0, 1.0, 1.0)         # % text
-STALE = (0.55, 0.58, 0.66, 1.0)
+TXT = (1.0, 1.0, 1.0, 1.0)         # % text (readable on every fill colour)
 ALERT_BG = (0.86, 0.20, 0.18, 1.0)  # loud red banner (token dead)
 ALERT_TX = (1.0, 1.0, 1.0, 1.0)
 
@@ -97,7 +96,9 @@ def render(cfg: Config, bars: List[dict], stale: bool = False, note: Optional[st
             rt += " · " + b["reset"]
         if stale:
             rt = "· " + rt  # subtle stale marker
-        text(bar_x + bar_w / 2.0, cfg.height / 2.0, rt, TXT if not stale else STALE,
+        # Always white: the stale palette dims the *fill*, and reusing that same
+        # grey for the text made it vanish wherever it overlapped the fill.
+        text(bar_x + bar_w / 2.0, cfg.height / 2.0, rt, TXT,
              pct_size, bold=True, align_center=True)
 
         x += seg_w + gap

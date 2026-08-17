@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "anthropic-usage"
-version = "1.0.0"
+version = "1.0.1"
 description = "Anthropic usage panel widget for XFCE (via xfce4-genmon-plugin)"
 readme = "README.md"
 requires-python = ">=3.9"

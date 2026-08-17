@@ -8,7 +8,7 @@ from typing import Optional, Tuple
 
 from . import cache
 from .config import Config
-from .credentials import read_token
+from .credentials import read_credentials
 
 
 def fetch_usage(cfg: Config) -> Tuple[Optional[dict], Optional[str]]:
@@ -18,10 +18,17 @@ def fetch_usage(cfg: Config) -> Tuple[Optional[dict], Optional[str]]:
         return None, "backoff"
 
     try:
-        token = read_token(cfg)
+        token, expires_at = read_credentials(cfg)
     except Exception:
         cache.log_event(cfg, "no credentials at %s" % cfg.cred_path)
         return None, "no-token"
+
+    # An expired token only ever earns a 401, and a run of 401s is what gets us
+    # rate-limited into an hour-long back-off. Don't spend the request at all.
+    if expires_at is not None and expires_at <= time.time():
+        cache.log_event(cfg, "access token expired %ds ago; skipping the call"
+                         % int(time.time() - expires_at))
+        return None, "auth"
 
     req = urllib.request.Request(
         cfg.usage_url,
