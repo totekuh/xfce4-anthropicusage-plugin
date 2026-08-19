@@ -51,6 +51,22 @@ def test_fetch_usage_sends_bearer_token(cfg, monkeypatch):
     assert captured["auth"] == "Bearer test-token"
 
 
+def test_fetch_usage_sends_claude_code_client_identity(cfg, monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["ua"] = req.get_header("User-agent")
+        captured["app"] = req.get_header("X-app")
+        captured["platform"] = req.get_header("Anthropic-client-platform")
+        return FakeResponse(b"{}")
+
+    monkeypatch.setattr(client.urllib.request, "urlopen", fake_urlopen)
+    client.fetch_usage(cfg)
+    assert captured["ua"] == cfg.user_agent
+    assert captured["app"] == "cli"
+    assert captured["platform"] == "claude_code_cli"
+
+
 def test_fetch_usage_no_credentials_file(cfg, monkeypatch):
     import dataclasses
     missing_cfg = dataclasses.replace(cfg, cred_path=str(cfg.cache_dir) + "/nope.json")
@@ -95,11 +111,29 @@ def test_fetch_usage_401_is_auth_error(cfg, monkeypatch):
     assert err == "auth"
 
 
-def test_fetch_usage_403_is_auth_error(cfg, monkeypatch):
+def test_fetch_usage_403_is_not_reported_as_expired_token(cfg, monkeypatch):
     monkeypatch.setattr(client.urllib.request, "urlopen",
                          lambda req, timeout: (_ for _ in ()).throw(http_error(cfg.usage_url, 403)))
     data, err = client.fetch_usage(cfg)
-    assert err == "auth"
+    assert data is None
+    assert err == "forbidden"
+
+
+def test_fetch_usage_403_backs_off_instead_of_retrying(cfg, monkeypatch):
+    calls = []
+
+    def fake_urlopen(req, timeout):
+        calls.append(1)
+        raise http_error(cfg.usage_url, 403)
+
+    monkeypatch.setattr(client.urllib.request, "urlopen", fake_urlopen)
+    client.fetch_usage(cfg)
+    assert cache.read_backoff(cfg) >= time.time() + cfg.forbidden_backoff - 1
+
+    # the next tick must not spend a request while the window is open
+    _, err = client.fetch_usage(cfg)
+    assert err == "backoff"
+    assert len(calls) == 1
 
 
 def test_fetch_usage_429_sets_backoff_floor(cfg, monkeypatch):

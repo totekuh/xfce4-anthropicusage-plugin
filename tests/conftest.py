@@ -16,4 +16,7 @@ def cfg(tmp_path):
         width=330,
         height=26,
         labels=["5h", "Weekly"],
+        user_agent="claude-cli/9.9.9 (external, cli)",
+        client_app="cli",
+        client_platform="claude_code_cli",
     )

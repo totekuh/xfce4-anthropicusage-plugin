@@ -35,7 +35,10 @@ def fetch_usage(cfg: Config) -> Tuple[Optional[dict], Optional[str]]:
         headers={
             "Authorization": "Bearer " + token,
             "anthropic-beta": "oauth-2025-04-20",
-            "User-Agent": "anthropic-usage-widget/1.0",
+            "User-Agent": cfg.user_agent,
+            "x-app": cfg.client_app,
+            "anthropic-client-platform": cfg.client_platform,
+            "Content-Type": "application/json",
             "Accept": "application/json",
         },
     )
@@ -61,9 +64,17 @@ def fetch_usage(cfg: Config) -> Tuple[Optional[dict], Optional[str]]:
             cache.log_event(cfg, "HTTP 429 rate-limited; backing off %ds%s"
                              % (secs, " (Retry-After)" if retry_after else ""))
             return None, "http-429"
-        if e.code in (401, 403):
-            cache.log_event(cfg, "HTTP %d auth failure (token expired/invalid)" % e.code)
+        if e.code == 401:
+            cache.log_event(cfg, "HTTP 401 auth failure (token expired/invalid)")
             return None, "auth"
+        # 403 means the token authenticated fine and the request was refused
+        # anyway — a fresh login won't help. Sit it out rather than retrying
+        # every tick, which is how a 403 turns into a rate-limited 429.
+        if e.code == 403:
+            cache.set_backoff(cfg, cfg.forbidden_backoff)
+            cache.log_event(cfg, "HTTP 403 refused (token is valid); backing off %ds"
+                             % cfg.forbidden_backoff)
+            return None, "forbidden"
         cache.log_event(cfg, "HTTP %d" % e.code)
         return None, "http-%d" % e.code
     except Exception as e:

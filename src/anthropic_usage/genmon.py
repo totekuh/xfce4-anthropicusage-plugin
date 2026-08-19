@@ -31,6 +31,7 @@ def emit_genmon(cfg: Config, bars: List[dict], stale: bool, err: Optional[str], 
                 "offline": "network unreachable",
                 "http-429": "rate limited — backing off",
                 "backoff": "rate limited — waiting to retry",
+                "forbidden": "usage API refused the request (403)",
             }.get(err, err or "stale")
             lines.append("⚠ showing cached data (%s)" % reason)
         else:
