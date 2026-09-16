@@ -18,11 +18,33 @@ def emit_genmon(cfg: Config, bars: List[dict], stale: bool, err: Optional[str], 
     else:
         lines = ["<b>Anthropic usage</b>"]
 
-    for b in bars:
-        rline = "%s: %d%%" % (b["label"], round(b["pct"]))
+    pace_labels = {
+        "slow": '<span color="#40B8A0">▲ room to use more</span>',
+        "ok":   '<span color="#B3B3B3">● on track</span>',
+        "fast": '<span color="#E04A3A">▼ ease off</span>',
+    }
+    for i, b in enumerate(bars):
+        if i > 0:
+            lines.append("")
+        header = "<b>%s</b>  %d%%" % (b["label"], round(b["pct"]))
         if b["reset"]:
-            rline += "  (resets in %s)" % b["reset"]
-        lines.append(rline)
+            header += "  <small>(resets in %s)</small>" % b["reset"]
+        pace = b.get("pace")
+        if pace:
+            header += "  %s" % pace_labels[pace]
+        lines.append(header)
+
+        pd = b.get("pace_details")
+        if pd:
+            u = pd["rate_unit"]
+            lines.append('<small>  rate  <b>%.1f%%/%s</b>    projected  <b>%g%%</b></small>' % (pd["current_rate"], u, pd["projected"]))
+            if "cap_in" in pd:
+                lines.append('<small>  <span color="#E04A3A">⚠ cap in %s</span>  (%s idle)</small>' % (pd["cap_in"], pd["dead_time"]))
+                lines.append('<small>  target  <b>%.1f%%/%s</b> to land at 100%%</small>' % (pd["target_rate"], u))
+            elif "spare" in pd:
+                lines.append('<small>  <span color="#40B8A0">~%g%% headroom</span>    can push to  <b>%.1f%%/%s</b></small>' % (pd["spare"], pd["target_rate"], u))
+            elif "target_rate" in pd:
+                lines.append('<small>  sustain  <b>%.1f%%/%s</b> to land at 100%%</small>' % (pd["target_rate"], u))
 
     if stale:
         lines.append("")

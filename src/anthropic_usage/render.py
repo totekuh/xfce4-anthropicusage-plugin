@@ -6,7 +6,7 @@ import os
 from typing import List, Optional
 
 from .config import Config
-from .format import RED, pct_color
+from .format import RED, pace_color, pct_color
 
 BG = (0.0, 0.0, 0.0, 0.0)          # transparent (panel shows through)
 TRACK = (0.18, 0.20, 0.26, 1.0)    # empty bar
@@ -98,8 +98,18 @@ def render(cfg: Config, bars: List[dict], stale: bool = False, note: Optional[st
             rt = "· " + rt  # subtle stale marker
         # Always white: the stale palette dims the *fill*, and reusing that same
         # grey for the text made it vanish wherever it overlapped the fill.
-        text(bar_x + bar_w / 2.0, cfg.height / 2.0, rt, TXT,
-             pct_size, bold=True, align_center=True)
+        tw = text(bar_x + bar_w / 2.0, cfg.height / 2.0, rt, TXT,
+                  pct_size, bold=True, align_center=True)
+
+        dot_color = pace_color(b.get("pace"))
+        if dot_color and not stale:
+            dot_r = max(2.5, pct_size * 0.22)
+            dot_x = bar_x + bar_w / 2.0 + tw / 2.0 + dot_r + 3
+            dot_y = cfg.height / 2.0
+            if dot_x + dot_r < bar_x + bar_w:
+                cr.arc(dot_x, dot_y, dot_r, 0, 2 * math.pi)
+                cr.set_source_rgba(*dot_color)
+                cr.fill()
 
         x += seg_w + gap
 
